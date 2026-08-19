@@ -1,0 +1,25 @@
+# Data files
+*.mtx.gz
+*.tsv.gz
+*.h5
+*.h5ad
+
+# Intermediate outputs
+pseudobulk_counts.tsv
+pseudobulk_metadata.tsv
+peak_coordinates.tsv
+celltype_descriptions.tsv
+da_results_full.tsv
+da_summary.tsv
+
+# Large output files (>100 MB)
+accessible_regions_binary_matrix.csv
+da_results_full.tsv
+
+# OS / editor
+.DS_Store
+*.swp
+*~
+__pycache__/
+.Rhistory
+.RData
