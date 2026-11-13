@@ -1,58 +1,66 @@
 #!/usr/bin/env python3
 """
-05_dar_recompute_23annotated_v3.py
-Recompute BH FDR on 23 annotated cell types only for v3 DAR enrichment.
-Directions: negative and positive only (omnibus 'all' removed in v3.1).
+12_dar_fdr_23annotated.py
+BH-FDR for the DAR enrichment tests, restricted to the 23 annotated cell types.
+
+Two correction families are written to the output:
+  *_23 : BH within each direction (23 tests per direction)
+  *_46 : BH across both directions together (23 cell types x 2 directions = 46 tests)
+         -> used for Figure 3B in the manuscript (4 significant cell types).
+
+FIX (v3.3): the previous bh_fdr() divided the sorted p-values by n, n-1, ..., 1
+instead of the rank 1, 2, ..., n, so the smallest p-values were not corrected at all.
+Note: 'perm_pvalue' produced by 11_dar_enrichment_50pct.R is a tie-corrected normal
+approximation of the same rank-sum statistic (not a permutation test), so
+padj_perm_* is not independent of padj_wilcoxon_*.
 """
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 INPUT = "/mnt/results/rerconverge_cont_v2/phase_f_dar/dar_enrichment_summary_v3.csv"
 OUTPUT = "/mnt/results/rerconverge_cont_v2/dar_enrichment_23annotated_v3.csv"
 
-def bh_fdr(pvals, n_tests):
-    pvals = np.asarray(pvals, dtype=float)
-    sorted_idx = np.argsort(pvals)
-    sorted_pvals = pvals[sorted_idx]
-    sorted_padj = sorted_pvals * n_tests / np.arange(n_tests, 0, -1)
-    for i in range(n_tests - 2, -1, -1):
-        sorted_padj[i] = min(sorted_padj[i], sorted_padj[i + 1])
-    sorted_padj = np.clip(sorted_padj, 0, 1.0)
-    padj = np.ones(n_tests)
-    for i, idx in enumerate(sorted_idx):
-        padj[idx] = sorted_padj[i]
-    return padj
+
+def bh_fdr(pvals):
+    """Benjamini-Hochberg adjusted p-values (same result as R p.adjust(method='BH'))."""
+    p = np.asarray(pvals, dtype=float)
+    n = len(p)
+    order = np.argsort(p)
+    adj = p[order] * n / np.arange(1, n + 1)          # p_(i) * n / i
+    adj = np.minimum.accumulate(adj[::-1])[::-1]       # enforce monotonicity from the top rank down
+    out = np.empty(n)
+    out[order] = np.clip(adj, 0, 1)
+    return out
+
 
 def main():
     dar = pd.read_csv(INPUT)
-    annotated_cts = [ct for ct in dar["cell_type"].unique() if "Unannotated" not in ct]
-    print(f"Annotated cell types: {len(annotated_cts)}")
+    annotated = dar[~dar["cell_type"].str.contains("Unannotated")].copy().reset_index(drop=True)
+    print(f"Annotated cell types: {annotated['cell_type'].nunique()}")
 
-    rows = []
+    # family of 46: both directions together
+    annotated["padj_wilcoxon_46"] = bh_fdr(annotated["pvalue_wilcoxon"].values)
+    annotated["padj_perm_46"] = bh_fdr(annotated["perm_pvalue"].values)
+
+    # family of 23: within direction
+    annotated["padj_wilcoxon_23"] = np.nan
+    annotated["padj_perm_23"] = np.nan
     for direction in ["negative", "positive"]:
-        sub = dar[dar["direction"] == direction].copy()
-        sub_ann = sub[sub["cell_type"].isin(annotated_cts)].copy().reset_index(drop=True)
-        n = len(sub_ann)
-        sub_ann["padj_wilcoxon_23"] = bh_fdr(sub_ann["pvalue_wilcoxon"].values, n)
-        sub_ann["padj_perm_23"] = bh_fdr(sub_ann["perm_pvalue"].values, n)
-        rows.append(sub_ann)
+        idx = annotated.index[annotated["direction"] == direction]
+        annotated.loc[idx, "padj_wilcoxon_23"] = bh_fdr(annotated.loc[idx, "pvalue_wilcoxon"].values)
+        annotated.loc[idx, "padj_perm_23"] = bh_fdr(annotated.loc[idx, "perm_pvalue"].values)
 
-    result = pd.concat(rows, ignore_index=True)
-    result.to_csv(OUTPUT, index=False)
+    annotated.to_csv(OUTPUT, index=False)
 
     for direction in ["negative", "positive"]:
-        sub = result[result["direction"] == direction]
-        sig_w = (sub["padj_wilcoxon_23"] < 0.05).sum()
-        sig_p = (sub["padj_perm_23"] < 0.05).sum()
-        print(f"  {direction}: Wilcoxon sig={sig_w}, Perm sig={sig_p}")
-        if direction == "negative":
-            sig = sub[sub["padj_wilcoxon_23"] < 0.05].sort_values("padj_wilcoxon_23")
-            for _, r in sig.iterrows():
-                tag = "GREEN" if r["effect_size"] >= 0.015 else "YELLOW"
-                print(f"    {tag}: {r['cell_type']:15s} effect={r['effect_size']:.4f} "
-                      f"wilcoxon_fdr={r['padj_wilcoxon_23']:.6f} perm_fdr={r['padj_perm_23']:.6f}")
-
+        sub = annotated[annotated["direction"] == direction]
+        print(f"  {direction}: Wilcoxon FDR<0.05  BH-23 = {(sub['padj_wilcoxon_23'] < 0.05).sum()}, "
+              f"BH-46 = {(sub['padj_wilcoxon_46'] < 0.05).sum()}")
+    sig = annotated[(annotated["direction"] == "negative") & (annotated["padj_wilcoxon_46"] < 0.05)]
+    for _, r in sig.sort_values("padj_wilcoxon_46").iterrows():
+        print(f"    {r['cell_type']:12s} effect={r['effect_size']:.4f} FDR46={r['padj_wilcoxon_46']:.2e}")
     print(f"\nSaved: {OUTPUT}")
+
 
 if __name__ == "__main__":
     main()

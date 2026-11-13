@@ -36,7 +36,8 @@ annotated_cts <- cell_types[!grepl("^Unannotated", cell_types)]
 message(sprintf("Cell types: %d total, %d annotated", length(cell_types), length(annotated_cts)))
 
 # ============================================================
-# Wilcoxon + permutation (rank-sum based)
+# Wilcoxon + rank-sum z-test (NOTE: "perm_*" columns are a tie-corrected NORMAL approximation of the
+# same rank-sum statistic, not a permutation test; N_PERM is unused. They are not independent of the Wilcoxon p-values.)
 # ============================================================
 message("=== Running Wilcoxon density test ===")
 

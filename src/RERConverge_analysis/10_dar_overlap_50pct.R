@@ -76,7 +76,7 @@ message(sprintf("\nSaved: %s (%d x %d)", out_path, nrow(overlap_matrix), ncol(ov
 old_path <- file.path(OUTPUT_DIR, "dar_overlap_matrix.csv")
 if (file.exists(old_path)) {
   old_mat <- read.csv(old_path, row.names = 1, check.names = FALSE)
-  common_rows <- intersect(rownames(overlap_matrix), rownames(rownames(old_mat)))
+  common_rows <- intersect(rownames(overlap_matrix), rownames(old_mat))
   message("\n=== Comparison with old (any-overlap) matrix ===")
   for (ct in colnames(overlap_matrix)) {
     if (ct %in% colnames(old_mat)) {

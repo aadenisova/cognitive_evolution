@@ -38,7 +38,7 @@ pipeline/
 |---|--------|--------------|-------------|
 | 00 | `00_parallel_core.R` | Parallelized `coreGetResiduals`/`getAllResiduals` helpers (sourced by 01) | — |
 | 01 | `01_transform_selection.R` | Reads all 272,811 CNEE trees; computes RER matrices for 4 path transforms (sqrt, log, asinh, none) + parametric correlations | `treesObj_cont.rds`, `RERmat_*.rds`, `res_*.rds` (in `/workspace/`) |
-| 02 | `02_transform_calibration.R` | Lambda-GC calibration on top-5,000 CNEEs, 100 perms → selects **log** | `output/01_transform_selection/` |
+| 02 | `02_transform_calibration.R` | Calibration on top-5,000 CNEEs (100 perms; λ computed on the top-ranked CNEEs only, so not a genome-wide inflation factor; `spearman_cal` was NA because all permpval = 1/101) → **log** has the lowest λ. `02b_genomewide_lambda.R` computes the genome-wide λ. | `output/01_transform_selection/` |
 | 03 | `03_permutations_fdr.R` | Main run: correlations + **2,000 permutations** per CNEE, BH + global empirical FDR | `output/03_permutations_fdr/` (full results, 272,811), `res_final_cont_v2.rds` |
 | 04 | `04_exon_cleanup_robust.R` | Removes 81 exonic CNEEs (liftOver artifacts); selects robust set: permpval < 0.05 **and** sign stability ≥ 80% over 92 leave-out iterations | `output/04_exon_cleanup_robust/` (272,730 + 7,350) |
 | 05 | `05_leave_out_stability.R` | 92 leave-one-species-out reruns; Spearman rho + top-N overlap vs full run | `output/05_leave_out_stability/`, `leave_out_results.rds` |
@@ -48,7 +48,7 @@ pipeline/
 | 09 | `09_dar_enrichment_fgsea.R` | CNEE–DAR overlap matrix (any overlap) + fgsea-based DAR enrichment | `output/09_dar_enrichment_fgsea/` |
 | 10 | `10_dar_overlap_50pct.R` | CNEE–DAR overlap with strict >50% CNEE-length criterion | `output/10_12_dar_50pct/dar_overlap_matrix_50pct.csv` |
 | 11 | `11_dar_enrichment_50pct.R` | Wilcoxon rank-sum: −log10(permpval) inside vs outside DARs, per cell type | `output/10_12_dar_50pct/` |
-| 12 | `12_dar_fdr_23annotated.py` | BH FDR on 23 annotated cell types only, neg + pos directions | `output/10_12_dar_50pct/dar_enrichment_23annotated_v3.csv` |
+| 12 | `12_dar_fdr_23annotated.py` | BH FDR on the 23 annotated cell types: `*_23` within direction, `*_46` across both directions (used for Fig. 3B). BH function fixed in v3.3 | `output/10_12_dar_50pct/dar_enrichment_23annotated_v3.csv` |
 | 13 | `13_gene_stats_filtered.py` | Gene-level stats with v3 attribution (gene body + promoter ≤3 kb + downstream ≤300 bp; distal intergenic excluded) | `output/13_gene_stats/gene_level_stats_v3.csv` |
 | 14 | `14_gene_symbol_map.R` | Gene symbol map via org.Gg.eg.db (4,440/4,443 geneIds) | `output/14_symbol_map/gene_symbol_map.csv` |
 | 15 | `15_export_tree.R` | Exports rooted species tree (outgroup: *Apteryx mantelli*) + innovation table | `output/15_export_tree/` |
@@ -101,8 +101,8 @@ scripts 04–20 run comfortably in 16–32 GB.
 - 0 CNEEs genome-wide significant (FDR < 0.05, three correction approaches); minimum
   BH-adjusted parametric p.adj = 0.083, and the top permpval hit mCE1022938
   (Rho = 0.570, near *BRMS1L*) reaches p.adj = 0.092 — borderline, but not significant
-- 7,350 robust CNEEs (3,804 positive / 3,546 negative Rho), all 100% sign-stable
-- 1 significant GO term (human CC: acrosomal vesicle, GO:0001669)
-- 7 significant cell types in DAR enrichment (negative Rho; glial + neuronal)
+- 7,350 nominally associated CNEEs (permpval < 0.05 and sign stability >= 80%; 3,804 positive / 3,546 negative Rho), all 100% sign-stable; none is significant after multiple-testing correction
+- GO/GSEA (script 07): one nominally significant term (human CC acrosomal vesicle, driven by a single gene, KIT); not used in the manuscript
+- 4 significant cell types in DAR enrichment after BH across 46 tests (negative Rho: OL, AST, OPC, EXC_GLU-8); 6 with BH within direction (+ INH_VIP, IOL). Earlier versions reported 7 because of a bug in the BH function (fixed in v3.3). Effect sizes are small (rank-biserial 0.03-0.04)
 - Full sorted per-CNEE table: `../all_cnee_results_v3.csv`
 - Methods write-up: `../report_log_noexon_methods_v3.md`

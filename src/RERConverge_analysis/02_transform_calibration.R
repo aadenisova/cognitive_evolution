@@ -94,8 +94,10 @@ for (trans in transforms) {
 
   # Calibration metrics
   spearman_cal <- cor(-log10(obs_p), -log10(permpval), method = "spearman", use = "complete.obs")
-  chi2 <- qchisq(1 - obs_p, 1)
-  lambda <- median(chi2, na.rm = TRUE) / 0.455
+  chi2 <- qchisq(obs_p, 1, lower.tail = FALSE)
+  # CAVEAT: lambda is computed on the top-5,000 CNEEs ranked by P, so it is large by construction;
+  # it is NOT a genome-wide inflation factor (see 02b_genomewide_lambda.R). Same for prop_p_gt_0.5.
+  lambda <- median(chi2, na.rm = TRUE) / qchisq(0.5, 1)
   p_uniform <- mean(obs_p > 0.5, na.rm = TRUE)
 
   message(sprintf("Spearman: %.4f, Lambda: %.4f, Prop P>0.5: %.4f (%.1f sec)",

@@ -88,12 +88,9 @@ python build_outputs.py
 dar-analysis/
 ├── README.md
 ├── .gitignore
-├── code/
-│   ├── prepare_pseudobulk.py    # Stage 1: pseudobulk aggregation
-│   ├── run_deseq2_da.R          # Stage 2: DESeq2 DA analysis
-│   └── build_outputs.py         # Stage 3: output generation
-└── methods/
-    └── dar_methods.md           # Nature-style methods description
+├── prepare_pseudobulk.py    # Stage 1: pseudobulk aggregation
+├── run_deseq2_da.R          # Stage 2: DESeq2 DA analysis
+└── build_outputs.py         # Stage 3: output generation
 ```
 
 ## Key parameters

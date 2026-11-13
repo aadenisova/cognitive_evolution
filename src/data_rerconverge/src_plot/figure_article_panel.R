@@ -18,7 +18,6 @@
 is.waive <- function(x) inherits(x, "waiver")
 
 suppressPackageStartupMessages({
-  library(ggtree)
   library(ggplot2)
   library(ape)
   library(patchwork)
@@ -31,8 +30,10 @@ suppressPackageStartupMessages({
 # CONFIG
 # =============================================================================
 
-ROOT <- "/Users/aleksandradenisova/Desktop/data_rerconverge"
-OUT  <- file.path(ROOT, "figures")
+ROOT <- Sys.getenv("FIG_ROOT", "/Users/aleksandradenisova/Desktop/data_rerconverge")
+TREE_STYLE   <- Sys.getenv("TREE_STYLE", "aligned")   # "aligned" (tips on one line, default) or "depth" (old ggtree-like look)
+TREE_XEXPAND <- as.numeric(Sys.getenv("TREE_XEXPAND", "1.30"))  # right-hand room for tip labels (like hexpand(0.30))
+OUT  <- Sys.getenv("FIG_OUT", file.path(ROOT, "figures"))
 
 TREE_NWK     <- file.path(ROOT, "species_tree_rooted.nwk")
 INNOV_CSV    <- file.path(ROOT, "innovation_table.csv")
@@ -55,7 +56,7 @@ COL_WEAK   <- "#D48B16"
 COL_NS     <- "#C8C8C8"
 
 DAR_EFFECT_CUTOFF <- 0.015
-DAR_FDR_COL <- "padj_wilcoxon_23"
+DAR_FDR_COL <- "padj_wilcoxon_46"   # BH across all 46 tests (23 cell types x 2 directions); column added in *_corrected.xlsx
 
 FIG_W <- 10.2
 FIG_H <- 12.2
@@ -114,7 +115,7 @@ save_both <- function(plot, name, width, height) {
   ggsave(png_path, plot, width = width, height = height, dpi = DPI, bg = "white",
          device = ragg::agg_png, scaling = 1)
   ggsave(pdf_path, plot, width = width, height = height, bg = "white",
-         device = pdf, family = FONT, useDingbats = FALSE)
+         device = cairo_pdf, family = FONT)  # cairo_pdf embeds fonts (journal-friendly)
   message(sprintf("  %s", png_path))
   message(sprintf("  %s", pdf_path))
 }
@@ -201,27 +202,52 @@ dfb$direction <- sel$direction[match(dfb$CNEE, sel$CNEE)]
 
 message("Panel A: tree...")
 
-p_tree <- ggtree(tree, layout = "rectangular", branch.length = "none")
-p_tree$layers[[1]]$aes_params$linewidth <- 0.28
-p_tree$layers[[1]]$aes_params$colour <- "grey25"
-p_tree$data$display <- ifelse(p_tree$data$isTip, name_map[p_tree$data$label], NA_character_)
+# --- tree layout without ggtree (ape + ggplot2 only; same cladogram as ggtree(branch.length = "none")) ---
+# TREE_STYLE = "depth"   : x = number of edges from the root (as before; tips ragged, dotted guides to labels)
+# TREE_STYLE = "aligned" : x = distance from the tips in nodes (all tips on the right edge; no dotted guides)
+tree_l <- ape::ladderize(tree, right = FALSE)
+n_tip <- ape::Ntip(tree_l); n_all <- n_tip + ape::Nnode(tree_l)
+ed <- tree_l$edge
+kids <- split(ed[, 2], ed[, 1])
+root <- n_tip + 1L
+tips_in_order <- ed[ed[, 2] <= n_tip, 2]
+yy <- numeric(n_all); yy[tips_in_order] <- seq_along(tips_in_order)
+set_y <- function(nd) { if (nd <= n_tip) return(yy[nd]); v <- vapply(kids[[as.character(nd)]], set_y, numeric(1)); yy[nd] <<- mean(v); yy[nd] }
+invisible(set_y(root))
+dep <- numeric(n_all)
+set_d <- function(nd, d) { dep[nd] <<- d; if (nd > n_tip) for (k in kids[[as.character(nd)]]) set_d(k, d + 1) }
+set_d(root, 0)
+hgt <- numeric(n_all)
+set_h <- function(nd) { if (nd <= n_tip) return(0); h <- max(vapply(kids[[as.character(nd)]], set_h, numeric(1))) + 1; hgt[nd] <<- h; h }
+invisible(set_h(root))
+xx <- if (TREE_STYLE == "aligned") hgt[root] - hgt else dep
+x_tip_max <- max(xx[1:n_tip])
+seg_h <- data.frame(x0 = xx[ed[, 1]], x1 = xx[ed[, 2]], y = yy[ed[, 2]])
+int_nodes <- as.integer(names(kids))
+seg_v <- data.frame(x = xx[int_nodes],
+                    y0 = vapply(int_nodes, function(nd) min(yy[kids[[as.character(nd)]]]), numeric(1)),
+                    y1 = vapply(int_nodes, function(nd) max(yy[kids[[as.character(nd)]]]), numeric(1)))
+tip_df <- data.frame(label = tree_l$tip.label, x = xx[1:n_tip], y = yy[1:n_tip],
+                     display = name_map[tree_l$tip.label], stringsAsFactors = FALSE)
+tip_df <- tip_df[order(tip_df$y), ]
+tip_bottom_to_top <- tip_df$label
 
-td_tips <- p_tree$data[p_tree$data$isTip, ]
-td_tips <- td_tips[order(td_tips$y), ]
-tip_bottom_to_top <- td_tips$label
-
-p_tree <- p_tree +
-  geom_tiplab(aes(label = display), size = 1.70, fontface = "plain",
-              align = TRUE, linesize = 0.10, offset = 0.15,
-              color = "grey10") +
-  theme_tree() +
-  hexpand(0.30) +
+p_tree <- ggplot() +
+  geom_segment(data = seg_h, aes(x = x0, xend = x1, y = y, yend = y), linewidth = 0.28, colour = "grey25", lineend = "square") +
+  geom_segment(data = seg_v, aes(x = x, xend = x, y = y0, yend = y1), linewidth = 0.28, colour = "grey25", lineend = "square") +
+  { if (TREE_STYLE == "depth")
+      geom_segment(data = tip_df, aes(x = x, xend = x_tip_max + 0.15, y = y, yend = y),
+                   linewidth = 0.10, linetype = "dotted", colour = "grey40") } +
+  geom_text(data = tip_df, aes(x = x_tip_max + 0.15, y = y, label = display),
+            hjust = 0, size = 1.70, colour = "grey10", family = FONT) +
+  scale_x_continuous(limits = c(0, x_tip_max * TREE_XEXPAND), expand = c(0, 0)) +
+  scale_y_continuous(expand = expansion(add = 0.6)) +
   labs(x = " ") +
+  theme_void() +
   theme(
     axis.title.x = element_text(size = 8, colour = NA),
-    axis.text.x  = element_blank(),
-    axis.ticks.x = element_blank(),
-    plot.margin  = margin(4, 0, 2, 2)
+    plot.margin  = margin(4, 0, 2, 2),
+    plot.background = element_rect(fill = NA, colour = NA)
   )
 
 innov$label <- factor(innov$tip, levels = tip_bottom_to_top)
@@ -320,7 +346,7 @@ p_b <- ggplot(dar, aes(x = effect_size, y = cell_type, fill = sig_cat)) +
     x = "Effect size",
     y = NULL,
     title = "DAR enrichment",
-    subtitle = "Wilcoxon, BH FDR, 23 cell types"
+    subtitle = "Wilcoxon, BH FDR across 46 tests"
   ) +
   theme_fig(7.2) +
   theme(
@@ -380,10 +406,10 @@ caption <- paste(
   "",
   "(A) Phylogeny of 92 bird species (cladogram; branch lengths not shown) with per-species technical innovation rate (TECHINNO2025 residual). Bars are aligned to tree tips and coloured from red (low) to blue (high). Species are labelled by English common names.",
   "",
-  "(B) Enrichment of robust CNEEs overlapping cell-type differentially accessible regions (DARs) in 23 brain cell types. Wilcoxon rank-sum tests compare elements overlapping a DAR with those that do not; effect size is the rank-biserial correlation. Tests were performed separately for CNEEs with negative ρ (top) and positive ρ (bottom). P values were adjusted by the Benjamini–Hochberg procedure across the 23 cell types. Green, FDR < 0.05; grey, not significant. Asterisks: * FDR < 0.05, ** FDR < 0.01, *** FDR < 0.001. The dashed line marks an effect-size threshold of 0.015.",
+  "(B) Enrichment of CNEEs overlapping cell-type differentially accessible regions (DARs) in 23 brain cell types. Wilcoxon rank-sum tests compare -log10 permutation P values of CNEEs overlapping a DAR with those of CNEEs that do not; effect size is the rank-biserial correlation. Tests were performed separately for CNEEs with negative ρ (top) and positive ρ (bottom). P values were adjusted by the Benjamini–Hochberg procedure across all 46 tests (23 cell types x 2 directions). Green, FDR < 0.05; grey, not significant. Asterisks: * FDR < 0.05, ** FDR < 0.01, *** FDR < 0.001. The dashed line marks an arbitrary effect-size reference of 0.015.",
   "",
   sprintf(
-    "(C) Relative evolutionary rate (RER) versus technical innovation rate for ten promoter CNEEs lying within %g kb of the transcription start site (TSS): the five closest positive associations (top row) and the five closest negative associations (bottom row), each ordered left to right by increasing |distance to TSS|. Each point is one species. Red, positive Spearman’s ρ; blue, negative ρ. Lines show linear fits with 95%% confidence intervals. Gene symbol, signed distance to the TSS, ρ and parametric P are indicated above each panel.",
+    "(C) Relative evolutionary rate (RER) versus technical innovation rate for ten promoter CNEEs lying within %g kb of the transcription start site (TSS): the five closest positive associations (top row) and the five closest negative associations (bottom row), each ordered left to right by increasing |distance to TSS|. Each point is one species. Red, positive ρ; blue, negative ρ (ρ and P are the CNEE-level RERconverge statistics: Pearson correlation across branches and parametric P). Lines show linear fits with 95%% confidence intervals. Gene symbol, signed distance to the TSS, ρ and parametric P are indicated above each panel.",
     TSS_MAX_BP / 1000
   ),
   sep = "\n"
