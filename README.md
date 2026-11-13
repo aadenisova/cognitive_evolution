@@ -13,5 +13,3 @@ accessible regions (DARs) from chicken telencephalon scATAC-seq.
 
 Input data (RER trees, phenotype table, DAR BED files) are not stored in this repository; scripts use the original
 absolute paths documented in `src/RERConverge_analysis/README.md`.
-
-Changes in v3.3 are listed in `CHANGES.md`.
